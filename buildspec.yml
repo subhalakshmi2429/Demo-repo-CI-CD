@@ -20,8 +20,11 @@ phases:
 
   build:
     commands:
+      - echo Creating tests directory and sample test file...
+      - mkdir -p tests
+      - echo "import unittest\n\nclass SampleTest(unittest.TestCase):\n    def test_addition(self):\n        self.assertEqual(2 + 2, 4)" > tests/test_sample.py
       - echo Running unit tests...
-      - python -m unittest discover -s tests  
+      - python -m unittest discover -s tests
 
       - echo Building the Docker image...
       - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
