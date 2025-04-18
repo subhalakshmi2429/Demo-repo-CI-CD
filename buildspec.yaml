@@ -24,3 +24,9 @@ phases:
       - echo Pushing Docker images to ECR...
       - docker push $REPOSITORY_URI:$IMAGE_TAG
       - docker push $REPOSITORY_URI:latest
+      - echo Creating imagedefinitions.json for ECS...
+      - printf '[{"name":"container","imageUri":"%s"}]' $REPOSITORY_URI:latest > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
