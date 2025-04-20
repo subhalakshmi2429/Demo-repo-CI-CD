@@ -1,171 +1,129 @@
 provider "aws" {
-  region = "ap-south-1"
+  region = "us-east-1"
 }
 
-resource "random_id" "suffix" {
-  byte_length = 4
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
+# Lookup default VPC
+data "aws_vpc" "default" {
+  default = true
 }
 
-locals {
-  suffix = random_id.suffix.hex
+# Get default subnet(s)
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
-resource "aws_s3_bucket" "codepipeline_bucket" {
-  bucket        = "demo-pipeline-bucket-${local.suffix}"
-  force_destroy = true
+# Get default security group
+data "aws_security_group" "default" {
+  name   = "default"
+  vpc_id = data.aws_vpc.default.id
 }
 
-resource "aws_iam_role" "codebuild_role" {
-  name = "demo-codebuild-role-${local.suffix}"
+# Use existing IAM role if it exists, otherwise create one
+data "aws_iam_role" "existing_ecs_task_execution" {
+  name = "ecsTaskExecutionRole"
+  depends_on = []
+}
+
+resource "aws_iam_role" "ecs_task_execution_role" {
+  count = length(try(data.aws_iam_role.existing_ecs_task_execution.name, "")) > 0 ? 0 : 1
+  name  = "ecsTaskExecutionRole"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "codebuild.amazonaws.com" }
-      Action    = "sts:AssumeRole"
+      Effect = "Allow",
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
     }]
   })
 }
 
-resource "aws_codebuild_project" "example" {
-  name          = "demo-codebuild-${local.suffix}"
-  description   = "Demo build project"
-  build_timeout = 5
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
+  count      = length(try(data.aws_iam_role.existing_ecs_task_execution.name, "")) > 0 ? 0 : 1
+  role       = aws_iam_role.ecs_task_execution_role[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
 
-  service_role = aws_iam_role.codebuild_role.arn
+# Get ECR repo or create it
+resource "aws_ecr_repository" "final_test_repo" {
+  name = "final-test-repo"
+}
 
-  artifacts {
-    type = "CODEPIPELINE"
-  }
-
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/standard:5.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "buildspec.yml"
+# Docker login
+resource "null_resource" "ecr_login" {
+  provisioner "local-exec" {
+    command = <<EOT
+      aws ecr get-login-password --region ${data.aws_region.current.name} \
+      | docker login --username AWS --password-stdin \
+      ${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com
+    EOT
   }
 }
 
-resource "aws_iam_role" "codepipeline_role" {
-  name = "demo-codepipeline-role-${local.suffix}"
+# Build and push Docker image
+resource "null_resource" "build_and_push_image" {
+  depends_on = [null_resource.ecr_login]
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "codepipeline.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
+  provisioner "local-exec" {
+    command = <<EOT
+      docker build -t final-test-repo ./app
+      docker tag final-test-repo:latest ${aws_ecr_repository.final_test_repo.repository_url}:latest
+      docker push ${aws_ecr_repository.final_test_repo.repository_url}:latest
+    EOT
+  }
 }
 
-# Static ECS Cluster with the name "final-test-cluster"
+# ECS Cluster
 resource "aws_ecs_cluster" "final_test_cluster" {
   name = "final-test-cluster"
 }
 
-# Static ECS Task Definition with the name "final-test-task"
+# ECS Task Definition
 resource "aws_ecs_task_definition" "final_test_task" {
   family                   = "final-test-task"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = aws_iam_role.codebuild_role.arn
+
+  execution_role_arn = coalesce(
+    try(data.aws_iam_role.existing_ecs_task_execution.arn, ""),
+    aws_iam_role.ecs_task_execution_role[0].arn
+  )
 
   container_definitions = jsonencode([{
-    name      = "my-final-test-container"  # This must match the container name in imagedefinitions.json
-    image     = "",                        # This will be updated dynamically during deployment
-    essential = true,
+    name      = "my-final-test-container"
+    image     = "${aws_ecr_repository.final_test_repo.repository_url}:latest"
+    essential = true
     portMappings = [{
-      containerPort = 80,
+      containerPort = 80
       hostPort      = 80
     }]
   }])
 }
 
-# Static ECS Service with the name "final-test-service"
+# ECS Service
 resource "aws_ecs_service" "final_test_service" {
   name            = "final-test-service"
   cluster         = aws_ecs_cluster.final_test_cluster.id
   task_definition = aws_ecs_task_definition.final_test_task.arn
-  desired_count   = 1
   launch_type     = "FARGATE"
+  desired_count   = 1
 
   network_configuration {
-    subnets          = ["subnet-xxxxxxxx"]  # Replace with your actual subnet ID
+    subnets          = data.aws_subnets.default.ids
+    security_groups  = [data.aws_security_group.default.id]
     assign_public_ip = true
-    security_groups  = ["sg-xxxxxxxx"]     # Replace with your actual security group ID
-  }
-}
-
-resource "aws_codepipeline" "example" {
-  name     = "demo-pipeline-${local.suffix}"
-  role_arn = aws_iam_role.codepipeline_role.arn
-
-  artifact_store {
-    location = aws_s3_bucket.codepipeline_bucket.bucket
-    type     = "S3"
   }
 
-  stage {
-    name = "Source"
-
-    action {
-      name             = "Source"
-      category         = "Source"
-      owner            = "AWS"
-      provider         = "CodeCommit"
-      version          = "1"
-      output_artifacts = ["source_output"]
-
-      configuration = {
-        RepositoryName = "demo-repo"
-        BranchName     = "main"
-      }
-    }
-  }
-
-  stage {
-    name = "Build"
-
-    action {
-      name             = "Build"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
-      output_artifacts = ["build_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.example.name
-      }
-    }
-  }
-
-  stage {
-    name = "Deploy"
-
-    action {
-      name             = "Deploy"
-      category         = "Deploy"
-      owner            = "AWS"
-      provider         = "ECS"
-      input_artifacts  = ["build_output"]
-      version          = "1"
-
-      configuration = {
-        ClusterName   = aws_ecs_cluster.final_test_cluster.name
-        ServiceName   = aws_ecs_service.final_test_service.name
-        FileName      = "imagedefinitions.json"  # This tells ECS to pick the image from the artifact
-      }
-    }
-  }
+  depends_on = [aws_ecs_task_definition.final_test_task]
 }
