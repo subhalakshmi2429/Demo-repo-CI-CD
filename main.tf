@@ -45,6 +45,31 @@ data "aws_security_group" "default" {
 }
 
 ##############################
+# IAM Role for ECS Execution
+##############################
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "ecsTaskExecutionRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+##############################
 # Cloud Map Namespace (Optional)
 ##############################
 resource "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
@@ -62,6 +87,7 @@ resource "aws_ecs_task_definition" "final_test_task" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([
     {
@@ -98,5 +124,9 @@ resource "aws_ecs_service" "final_test_service" {
     registry_arn = aws_service_discovery_private_dns_namespace.final_test_namespace.arn
   }
 
-  depends_on = [aws_ecs_cluster.final_test_cluster]
+  depends_on = [
+    aws_ecs_cluster.final_test_cluster,
+    aws_iam_role.ecs_task_execution_role,
+    aws_iam_role_policy_attachment.ecs_execution_role_policy
+  ]
 }
