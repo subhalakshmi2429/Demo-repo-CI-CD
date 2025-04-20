@@ -130,9 +130,14 @@ data "aws_vpc" "default" {
   default = true
 }
 
-# Data source for default security group
+# Data source for default security group, with filter for only the default security group in the default VPC
 data "aws_security_group" "default" {
   vpc_id = data.aws_vpc.default.id
+
+  filter {
+    name   = "group-name"
+    values = ["default"]
+  }
 }
 
 resource "aws_codepipeline" "example" {
