@@ -58,7 +58,7 @@ data "aws_security_group" "default" {
 # IAM Role for ECS Execution
 ##############################
 data "aws_iam_role" "ecs_task_execution_role" {
-  role_name = "ecsTaskExecutionRole"
+  name = "ecsTaskExecutionRole"
 }
 
 resource "aws_iam_role" "ecs_task_execution_role" {
