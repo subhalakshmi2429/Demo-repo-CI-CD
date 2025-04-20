@@ -79,7 +79,7 @@ resource "aws_ecs_task_definition" "example" {
 
   container_definitions = jsonencode([{
     name      = "my-container"        # This must match the container name in the imagedefinitions.json
-    image     = "",                   # This will be populated during the ECS deploy stage
+    image     = "${aws_ecr_repository.final_test_repo.repository_url}:${local.image_tag}",                  
     essential = true,
     portMappings = [{
       containerPort = 80,
