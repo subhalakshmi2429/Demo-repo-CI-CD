@@ -5,24 +5,26 @@ provider "aws" {
 ##############################
 # ECR Repository
 ##############################
+# Check if ECR Repository exists, create if not
 data "aws_ecr_repository" "final_test_repo" {
   name = "final-test-repo"
 }
 
 resource "aws_ecr_repository" "final_test_repo" {
-  count = length(data.aws_ecr_repository.final_test_repo) == 0 ? 1 : 0
+  count = length(data.aws_ecr_repository.final_test_repo.id) == 0 ? 1 : 0
   name  = "final-test-repo"
 }
 
 ##############################
 # ECS Cluster
 ##############################
+# Check if ECS Cluster exists, create if not
 data "aws_ecs_cluster" "final_test_cluster" {
   cluster_name = "final-test-cluster"
 }
 
 resource "aws_ecs_cluster" "final_test_cluster" {
-  count = length(data.aws_ecs_cluster.final_test_cluster) == 0 ? 1 : 0
+  count = length(data.aws_ecs_cluster.final_test_cluster.id) == 0 ? 1 : 0
   name  = "final-test-cluster"
 }
 
@@ -57,12 +59,13 @@ data "aws_security_group" "default" {
 ##############################
 # IAM Role for ECS Execution
 ##############################
+# Check if IAM role exists, create if not
 data "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
 }
 
 resource "aws_iam_role" "ecs_task_execution_role" {
-  count = length(data.aws_iam_role.ecs_task_execution_role) == 0 ? 1 : 0
+  count = length(data.aws_iam_role.ecs_task_execution_role.id) == 0 ? 1 : 0
   name  = "ecsTaskExecutionRole"
 
   assume_role_policy = jsonencode({
@@ -78,7 +81,7 @@ resource "aws_iam_role" "ecs_task_execution_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
-  count      = length(data.aws_iam_role.ecs_task_execution_role) == 0 ? 1 : 0
+  count      = length(data.aws_iam_role.ecs_task_execution_role.id) == 0 ? 1 : 0
   role       = aws_iam_role.ecs_task_execution_role[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
@@ -86,12 +89,9 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
 ##############################
 # Cloud Map Namespace (Optional)
 ##############################
-data "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
-  name = "final-test-namespace"
-}
-
+# Create Cloud Map Private DNS Namespace
 resource "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
-  count        = length(data.aws_service_discovery_private_dns_namespace.final_test_namespace) == 0 ? 1 : 0
+  count        = length(data.aws_service_discovery_private_dns_namespace.final_test_namespace.id) == 0 ? 1 : 0
   name         = "final-test-namespace"
   description  = "Service discovery namespace for final test"
   vpc          = data.aws_vpc.default.id
@@ -110,7 +110,7 @@ resource "aws_ecs_task_definition" "final_test_task" {
 
   container_definitions = jsonencode([{
     name      = "my-final-test-container"
-    image     = "${aws_ecr_repository.final_test_repo.repository_url}:latest"
+    image     = "${aws_ecr_repository.final_test_repo[0].repository_url}:latest" # Fixed reference to ECR repository
     essential = true
     portMappings = [
       {
