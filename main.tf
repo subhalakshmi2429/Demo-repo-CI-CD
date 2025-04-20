@@ -78,7 +78,7 @@ resource "aws_ecs_task_definition" "example" {
   execution_role_arn       = aws_iam_role.codebuild_role.arn
 
   container_definitions = jsonencode([{
-    name      = "my-container"        # This must match the container name in the imagedefinitions.json
+    name      = "my-final-test-container"        # This must match the container name in the imagedefinitions.json
     image     = "",                  
     essential = true,
     portMappings = [{
