@@ -3,12 +3,14 @@ version: 0.2
 env:
   variables:
     AWS_REGION: "ap-south-1"
-    ECR_REPO_NAME: "test-repository"
+    ECR_REPO_NAME: "final-test-repo"
 
 phases:
   install:
+    runtime-versions:
+      python: 3.11
     commands:
-      - echo Installing dependencies...
+      - echo Installing Python dependencies...
       - pip install -r requirements.txt
 
   pre_build:
@@ -20,24 +22,23 @@ phases:
 
   build:
     commands:
-      - echo Creating tests directory and sample test file...
+      - echo Running unit tests...
       - mkdir -p tests
       - echo "import unittest\n\nclass SampleTest(unittest.TestCase):\n    def test_addition(self):\n        self.assertEqual(2 + 2, 4)" > tests/test_sample.py
-      - echo Running unit tests...
       - python -m unittest discover -s tests
 
-      - echo Building the Docker image...
+      - echo Building Docker image...
       - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
       - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+
+      - echo Creating ECS imagedefinitions.json file...
+      - printf '[{\"name\":\"my-final-test-container\",\"imageUri\":\"%s\"}]' $REPOSITORY_URI:latest > imagedefinitions.json
 
   post_build:
     commands:
       - echo Pushing Docker images to ECR...
       - docker push $REPOSITORY_URI:$IMAGE_TAG
       - docker push $REPOSITORY_URI:latest
-
-      - echo Creating imagedefinitions.json for ECS...
-      - printf '[{"name":"container","imageUri":"%s"}]' $REPOSITORY_URI:latest > imagedefinitions.json
 
 artifacts:
   files:
