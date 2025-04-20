@@ -17,6 +17,8 @@ phases:
     commands:
       - echo "Logging in to Amazon ECR..."
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - TIMESTAMP=$(date +%s)
+      - CONTAINER_NAME="my-final-test-container-${TIMESTAMP}"
       - REPOSITORY_URI=574720314262.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
 
@@ -25,20 +27,20 @@ phases:
       - echo "Running unit tests..."
       - mkdir -p tests
       - echo "import unittest\n\nclass SampleTest(unittest.TestCase):\n    def test_addition(self):\n        self.assertEqual(2 + 2, 4)" > tests/test_sample.py
-      - python -m unittest discover -s tests ||true
+      - python -m unittest discover -s tests || true
 
       - echo "Building Docker image..."
       - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
-      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$CONTAINER_NAME
 
       - echo "Creating ECS imagedefinitions.json file..."
-      - echo "[{\"name\":\"my-final-test-container\",\"imageUri\":\"$REPOSITORY_URI:latest\"}]" > imagedefinitions.json
+      - echo "[{\"name\":\"$CONTAINER_NAME\",\"imageUri\":\"$REPOSITORY_URI:$CONTAINER_NAME\"}]" > imagedefinitions.json
 
   post_build:
     commands:
       - echo "Pushing Docker images to ECR..."
       - docker push $REPOSITORY_URI:$IMAGE_TAG
-      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$CONTAINER_NAME
 
 artifacts:
   files:
