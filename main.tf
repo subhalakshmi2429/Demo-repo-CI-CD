@@ -15,6 +15,19 @@ resource "aws_s3_bucket" "codepipeline_bucket" {
   force_destroy = true
 }
 
+resource "aws_iam_role" "codebuild_role" {
+  name = "demo-codebuild-role-${local.suffix}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { Service = "codebuild.amazonaws.com" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
 resource "aws_codebuild_project" "example" {
   name          = "demo-codebuild-${local.suffix}"
   description   = "Demo build project"
@@ -22,8 +35,9 @@ resource "aws_codebuild_project" "example" {
 
   service_role = aws_iam_role.codebuild_role.arn
 
+  # When using CodePipeline, artifacts must be CODEPIPELINE
   artifacts {
-    type = "NO_ARTIFACTS"
+    type = "CODEPIPELINE"
   }
 
   environment {
@@ -33,22 +47,21 @@ resource "aws_codebuild_project" "example" {
     image_pull_credentials_type = "CODEBUILD"
   }
 
+  # The source must also be CODEPIPELINE
   source {
     type      = "CODEPIPELINE"
     buildspec = "buildspec.yml"
   }
 }
 
-resource "aws_iam_role" "codebuild_role" {
-  name = "demo-codebuild-role-${local.suffix}"
+resource "aws_iam_role" "codepipeline_role" {
+  name = "demo-codepipeline-role-${local.suffix}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
-      Principal = {
-        Service = "codebuild.amazonaws.com"
-      }
+      Principal = { Service = "codepipeline.amazonaws.com" }
       Action = "sts:AssumeRole"
     }]
   })
@@ -98,19 +111,4 @@ resource "aws_codepipeline" "example" {
       }
     }
   }
-}
-
-resource "aws_iam_role" "codepipeline_role" {
-  name = "demo-codepipeline-role-${local.suffix}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "codepipeline.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
 }
