@@ -79,7 +79,7 @@ resource "aws_ecs_task_definition" "final_test_task" {
 # ECS Service
 ##############################
 resource "aws_ecs_service" "final_test_service" {
-  name            = "final-test-service"
+  name            = "final-test-service-2"
   cluster         = aws_ecs_cluster.final_test_cluster.id
   task_definition = aws_ecs_task_definition.final_test_task.arn
   launch_type     = "FARGATE"
