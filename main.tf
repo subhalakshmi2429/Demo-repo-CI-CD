@@ -3,16 +3,10 @@ provider "aws" {
 }
 
 ##############################
-# ECR Repository
+# ECR Repository (EXISTS)
 ##############################
 data "aws_ecr_repository" "final_test_repo" {
   name = "final-test-repo"
-  count = 0 // fallback if not found
-}
-
-resource "aws_ecr_repository" "final_test_repo" {
-  count = 1
-  name  = "final-test-repo"
 }
 
 ##############################
@@ -51,35 +45,22 @@ data "aws_security_group" "default" {
 }
 
 ##############################
-# IAM Role for ECS Execution
+# IAM Role for ECS Execution (EXISTS)
 ##############################
-resource "aws_iam_role" "ecs_task_execution_role" {
+data "aws_iam_role" "ecs_task_execution_role" {
   name = "ecsTaskExecutionRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect    = "Allow"
-        Principal = { Service = "ecs-tasks.amazonaws.com" }
-        Action    = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 ##############################
-# Cloud Map Namespace (Optional)
+# Service Discovery Namespace (EXISTS)
 ##############################
-resource "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
-  name        = "final-test-namespace"
-  description = "Service discovery namespace for final test"
-  vpc         = data.aws_vpc.default.id
+data "aws_service_discovery_private_dns_namespaces" "all" {}
+
+data "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
+  id = one([
+    for ns in data.aws_service_discovery_private_dns_namespaces.all.namespaces : ns.id
+    if ns.name == "final-test-namespace"
+  ])
 }
 
 ##############################
@@ -91,11 +72,11 @@ resource "aws_ecs_task_definition" "final_test_task" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  execution_role_arn       = data.aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([{
     name      = "my-final-test-container"
-    image     = "${aws_ecr_repository.final_test_repo[0].repository_url}:latest"
+    image     = "${data.aws_ecr_repository.final_test_repo.repository_url}:latest"
     essential = true
     portMappings = [
       {
@@ -123,12 +104,10 @@ resource "aws_ecs_service" "final_test_service" {
   }
 
   service_registries {
-    registry_arn = aws_service_discovery_private_dns_namespace.final_test_namespace.arn
+    registry_arn = data.aws_service_discovery_private_dns_namespace.final_test_namespace.arn
   }
 
   depends_on = [
-    aws_ecs_cluster.final_test_cluster,
-    aws_iam_role.ecs_task_execution_role,
-    aws_iam_role_policy_attachment.ecs_execution_role_policy
+    aws_ecs_cluster.final_test_cluster
   ]
 }
