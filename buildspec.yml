@@ -4,7 +4,7 @@ env:
   variables:
     AWS_REGION: "ap-south-1"
     ECR_REPO_NAME: "final-test-repo"
-    CONTAINER_NAME: "my-final-test-container"  
+    CONTAINER_NAME: "my-container"  
 
 phases:
   install:
