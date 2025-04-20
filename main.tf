@@ -8,6 +8,7 @@ resource "random_id" "suffix" {
 
 locals {
   suffix = random_id.suffix.hex
+  container_name = "my-container-${local.suffix}"
 }
 
 resource "aws_s3_bucket" "codepipeline_bucket" {
@@ -35,7 +36,6 @@ resource "aws_codebuild_project" "example" {
 
   service_role = aws_iam_role.codebuild_role.arn
 
-  # When using CodePipeline, artifacts must be CODEPIPELINE
   artifacts {
     type = "CODEPIPELINE"
   }
@@ -47,7 +47,6 @@ resource "aws_codebuild_project" "example" {
     image_pull_credentials_type = "CODEBUILD"
   }
 
-  # The source must also be CODEPIPELINE
   source {
     type      = "CODEPIPELINE"
     buildspec = "buildspec.yml"
@@ -111,4 +110,49 @@ resource "aws_codepipeline" "example" {
       }
     }
   }
+
+  stage {
+    name = "Deploy"
+
+    action {
+      name             = "Deploy"
+      category         = "Deploy"
+      owner            = "AWS"
+      provider         = "ECS"
+      input_artifacts  = ["build_output"]
+      output_artifacts = []
+
+      configuration = {
+        ClusterName          = "your-cluster-name"
+        ServiceName          = "your-service-name"
+        FileName             = "imagedefinitions.json"
+        ContainerName        = local.container_name
+      }
+    }
+  }
+}
+
+resource "aws_ecs_task_definition" "example" {
+  family                   = "demo-task-family-${local.suffix}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = "256"
+  memory                  = "512"
+
+  container_definitions = jsonencode([
+    {
+      name      = local.container_name  # Using dynamic container name here
+      image     = "574720314262.dkr.ecr.ap-south-1.amazonaws.com/final-test-repo:${local.container_name}"
+      essential = true
+      cpu       = 256
+      memory    = 512
+      portMappings = [
+        {
+          containerPort = 80
+          hostPort      = 80
+          protocol      = "tcp"
+        }
+      ]
+    }
+  ])
 }
