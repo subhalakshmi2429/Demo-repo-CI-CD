@@ -119,6 +119,7 @@ resource "aws_codepipeline" "example" {
       category         = "Deploy"
       owner            = "AWS"
       provider         = "ECS"
+      Version          = "1"
       input_artifacts  = ["build_output"]
       output_artifacts = []
 
