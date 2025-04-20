@@ -2,96 +2,119 @@ provider "aws" {
   region = "ap-south-1"
 }
 
-##############################
-# ECR Repository (EXISTS)
-##############################
-data "aws_ecr_repository" "final_test_repo" {
-  name = "final-test-repo"
+resource "random_id" "suffix" {
+  byte_length = 4
 }
 
-##############################
-# ECS Cluster
-##############################
-resource "aws_ecs_cluster" "final_test_cluster" {
-  name = "final-test-cluster"
+locals {
+  suffix = random_id.suffix.hex
 }
 
-##############################
-# Get Default VPC and Subnets
-##############################
-data "aws_vpc" "default" {
-  default = true
+resource "aws_s3_bucket" "codepipeline_bucket" {
+  bucket        = "demo-pipeline-bucket-${local.suffix}"
+  force_destroy = true
 }
 
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+resource "aws_codebuild_project" "example" {
+  name          = "demo-codebuild-${local.suffix}"
+  description   = "Demo build project"
+  build_timeout = 5
+
+  service_role = aws_iam_role.codebuild_role.arn
+
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/standard:5.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "buildspec.yml"
   }
 }
 
-##############################
-# Get Default Security Group
-##############################
-data "aws_security_group" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "group-name"
-    values = ["default"]
-  }
-}
+resource "aws_iam_role" "codebuild_role" {
+  name = "demo-codebuild-role-${local.suffix}"
 
-##############################
-# IAM Role for ECS Execution (EXISTS)
-##############################
-data "aws_iam_role" "ecs_task_execution_role" {
-  name = "ecsTaskExecutionRole"
-}
-
-##############################
-# ECS Task Definition
-##############################
-resource "aws_ecs_task_definition" "final_test_task" {
-  family                   = "final-test-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = data.aws_iam_role.ecs_task_execution_role.arn
-
-  container_definitions = jsonencode([{
-    name      = "my-final-test-container"
-    image     = "${data.aws_ecr_repository.final_test_repo.repository_url}:latest"
-    essential = true
-    portMappings = [
-      {
-        containerPort = 80
-        hostPort      = 80
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "codebuild.amazonaws.com"
       }
-    ]
-  }])
+      Action = "sts:AssumeRole"
+    }]
+  })
 }
 
-##############################
-# ECS Service
-##############################
-resource "aws_ecs_service" "final_test_service" {
-  name            = "final-test-service-2"
-  cluster         = aws_ecs_cluster.final_test_cluster.id
-  task_definition = aws_ecs_task_definition.final_test_task.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
+resource "aws_codepipeline" "example" {
+  name     = "demo-pipeline-${local.suffix}"
+  role_arn = aws_iam_role.codepipeline_role.arn
 
-  network_configuration {
-    subnets         = slice(data.aws_subnets.default.ids, 0, 2)
-    security_groups = [data.aws_security_group.default.id]
-    assign_public_ip = true
+  artifact_store {
+    location = aws_s3_bucket.codepipeline_bucket.bucket
+    type     = "S3"
   }
 
-  depends_on = [
-    aws_ecs_cluster.final_test_cluster
-  ]
+  stage {
+    name = "Source"
+
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeCommit"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        RepositoryName = "demo-repo"
+        BranchName     = "main"
+      }
+    }
+  }
+
+  stage {
+    name = "Build"
+
+    action {
+      name             = "Build"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_output"]
+      output_artifacts = ["build_output"]
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.example.name
+      }
+    }
+  }
+}
+
+resource "aws_iam_role" "codepipeline_role" {
+  name = "demo-codepipeline-role-${local.suffix}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "codepipeline.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "random_id" "suffix" {
+  byte_length = 4
 }

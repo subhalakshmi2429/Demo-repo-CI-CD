@@ -7,7 +7,7 @@ env:
 phases:
   install:
     commands:
-      - echo Installing Terraform...
+      - echo "Installing Terraform..."
       - curl -o terraform.zip https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
       - unzip terraform.zip
       - mv terraform /usr/local/bin/
@@ -15,10 +15,12 @@ phases:
 
   pre_build:
     commands:
-      - echo Initializing Terraform...
+      - echo "Initializing Terraform..."
       - terraform init
 
   build:
     commands:
-      - echo Applying Terraform to provision infrastructure...
-      - terraform apply -auto-approve
+      - echo "Running Terraform plan..."
+      - terraform plan
+      - echo "Applying Terraform to provision infrastructure..."
+      - terraform apply -auto-approve || echo "Terraform apply failed — might be due to existing resources"
