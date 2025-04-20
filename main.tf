@@ -52,18 +52,6 @@ data "aws_iam_role" "ecs_task_execution_role" {
 }
 
 ##############################
-# Service Discovery Namespace (EXISTS)
-##############################
-data "aws_service_discovery_private_dns_namespaces" "all" {}
-
-data "aws_service_discovery_private_dns_namespace" "final_test_namespace" {
-  id = one([
-    for ns in data.aws_service_discovery_private_dns_namespaces.all.namespaces : ns.id
-    if ns.name == "final-test-namespace"
-  ])
-}
-
-##############################
 # ECS Task Definition
 ##############################
 resource "aws_ecs_task_definition" "final_test_task" {
@@ -101,10 +89,6 @@ resource "aws_ecs_service" "final_test_service" {
     subnets         = slice(data.aws_subnets.default.ids, 0, 2)
     security_groups = [data.aws_security_group.default.id]
     assign_public_ip = true
-  }
-
-  service_registries {
-    registry_arn = data.aws_service_discovery_private_dns_namespace.final_test_namespace.arn
   }
 
   depends_on = [
