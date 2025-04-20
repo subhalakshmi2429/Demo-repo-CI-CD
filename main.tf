@@ -20,10 +20,10 @@ resource "aws_iam_role" "codebuild_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [ {
-      Effect = "Allow"
+    Statement = [{
+      Effect    = "Allow"
       Principal = { Service = "codebuild.amazonaws.com" }
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -57,20 +57,22 @@ resource "aws_iam_role" "codepipeline_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [ {
-      Effect = "Allow"
+    Statement = [{
+      Effect    = "Allow"
       Principal = { Service = "codepipeline.amazonaws.com" }
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
 
-resource "aws_ecs_cluster" "example" {
-  name = "demo-cluster-${local.suffix}"
+# Static ECS Cluster with the name "final-test-cluster"
+resource "aws_ecs_cluster" "final_test_cluster" {
+  name = "final-test-cluster"
 }
 
-resource "aws_ecs_task_definition" "example" {
-  family                   = "demo-task-${local.suffix}"
+# Static ECS Task Definition with the name "final-test-task"
+resource "aws_ecs_task_definition" "final_test_task" {
+  family                   = "final-test-task"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
@@ -78,8 +80,8 @@ resource "aws_ecs_task_definition" "example" {
   execution_role_arn       = aws_iam_role.codebuild_role.arn
 
   container_definitions = jsonencode([{
-    name      = "my-final-test-container"        # This must match the container name in the imagedefinitions.json
-    image     = "",                  
+    name      = "my-final-test-container"  # This must match the container name in imagedefinitions.json
+    image     = "",                        # This will be updated dynamically during deployment
     essential = true,
     portMappings = [{
       containerPort = 80,
@@ -88,10 +90,11 @@ resource "aws_ecs_task_definition" "example" {
   }])
 }
 
-resource "aws_ecs_service" "example" {
-  name            = "demo-service-${local.suffix}"
-  cluster         = aws_ecs_cluster.example.id
-  task_definition = aws_ecs_task_definition.example.arn
+# Static ECS Service with the name "final-test-service"
+resource "aws_ecs_service" "final_test_service" {
+  name            = "final-test-service"
+  cluster         = aws_ecs_cluster.final_test_cluster.id
+  task_definition = aws_ecs_task_definition.final_test_task.arn
   desired_count   = 1
   launch_type     = "FARGATE"
 
@@ -159,8 +162,8 @@ resource "aws_codepipeline" "example" {
       version          = "1"
 
       configuration = {
-        ClusterName   = aws_ecs_cluster.example.name
-        ServiceName   = aws_ecs_service.example.name
+        ClusterName   = aws_ecs_cluster.final_test_cluster.name
+        ServiceName   = aws_ecs_service.final_test_service.name
         FileName      = "imagedefinitions.json"  # This tells ECS to pick the image from the artifact
       }
     }
