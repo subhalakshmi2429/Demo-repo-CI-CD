@@ -20,7 +20,7 @@ resource "aws_iam_role" "codebuild_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = [ {
       Effect = "Allow"
       Principal = { Service = "codebuild.amazonaws.com" }
       Action = "sts:AssumeRole"
@@ -57,7 +57,7 @@ resource "aws_iam_role" "codepipeline_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = [ {
       Effect = "Allow"
       Principal = { Service = "codepipeline.amazonaws.com" }
       Action = "sts:AssumeRole"
@@ -77,17 +77,15 @@ resource "aws_ecs_task_definition" "example" {
   memory                   = "512"
   execution_role_arn       = aws_iam_role.codebuild_role.arn
 
-  container_definitions = jsonencode([
-    {
-      name      = "my-container",
-      image     = "",
-      essential = true,
-      portMappings = [{
-        containerPort = 80,
-        hostPort      = 80
-      }]
-    }
-  ])
+  container_definitions = jsonencode([{
+    name      = "my-container"        # This must match the container name in the imagedefinitions.json
+    image     = "",                   # This will be populated during the ECS deploy stage
+    essential = true,
+    portMappings = [{
+      containerPort = 80,
+      hostPort      = 80
+    }]
+  }])
 }
 
 resource "aws_ecs_service" "example" {
@@ -98,9 +96,9 @@ resource "aws_ecs_service" "example" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = ["subnet-xxxxxxxx"]
+    subnets          = ["subnet-xxxxxxxx"]  # Replace with your actual subnet ID
     assign_public_ip = true
-    security_groups  = ["sg-xxxxxxxx"]
+    security_groups  = ["sg-xxxxxxxx"]     # Replace with your actual security group ID
   }
 }
 
@@ -163,7 +161,7 @@ resource "aws_codepipeline" "example" {
       configuration = {
         ClusterName   = aws_ecs_cluster.example.name
         ServiceName   = aws_ecs_service.example.name
-        FileName      = "imagedefinitions.json"
+        FileName      = "imagedefinitions.json"  # This tells ECS to pick the image from the artifact
       }
     }
   }
