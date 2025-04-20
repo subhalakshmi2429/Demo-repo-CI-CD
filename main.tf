@@ -114,7 +114,3 @@ resource "aws_iam_role" "codepipeline_role" {
     }]
   })
 }
-
-resource "random_id" "suffix" {
-  byte_length = 4
-}
