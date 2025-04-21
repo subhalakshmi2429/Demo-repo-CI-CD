@@ -1,35 +1,79 @@
-# Fetch default VPC
-data "aws_vpc" "default" {
-  default = true
+main.tf file of terraform
+------------------------
+
+provider "aws" {
+  region = "ap-south-1"
 }
 
-# Fetch default subnet (first one)
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+locals {
+  suffix = random_id.suffix.hex
+}
+
+resource "aws_s3_bucket" "codepipeline_bucket" {
+  bucket        = "demo-pipeline-bucket-${local.suffix}"
+  force_destroy = true
+}
+
+resource "aws_iam_role" "codebuild_role" {
+  name = "demo-codebuild-role-${local.suffix}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "codebuild.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_codebuild_project" "example" {
+  name          = "demo-codebuild-${local.suffix}"
+  description   = "Demo build project"
+  build_timeout = 5
+
+  service_role = aws_iam_role.codebuild_role.arn
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/standard:5.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "buildspec.yml"
   }
 }
 
-# Fetch default security group in default VPC
-data "aws_security_group" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
+resource "aws_iam_role" "codepipeline_role" {
+  name = "demo-codepipeline-role-${local.suffix}"
 
-  filter {
-    name   = "group-name"
-    values = ["default"]
-  }
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "codepipeline.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
 }
 
-# ECS Cluster
+# Static ECS Cluster with the name "final-test-cluster"
 resource "aws_ecs_cluster" "final_test_cluster" {
   name = "final-test-cluster"
 }
 
-# ECS Task Definition
+# Static ECS Task Definition with the name "final-test-task"
 resource "aws_ecs_task_definition" "final_test_task" {
   family                   = "final-test-task"
   requires_compatibilities = ["FARGATE"]
@@ -39,17 +83,17 @@ resource "aws_ecs_task_definition" "final_test_task" {
   execution_role_arn       = aws_iam_role.codebuild_role.arn
 
   container_definitions = jsonencode([{
-    name      = "my-final-test-container"
-    image     = "",  # Will be replaced during CodePipeline deploy using imagedefinitions.json
-    essential = true
+    name      = "my-final-test-container"  # This must match the container name in imagedefinitions.json
+    image     = "",                        # This will be updated dynamically during deployment
+    essential = true,
     portMappings = [{
-      containerPort = 80
+      containerPort = 80,
       hostPort      = 80
     }]
   }])
 }
 
-# ECS Service
+# Static ECS Service with the name "final-test-service"
 resource "aws_ecs_service" "final_test_service" {
   name            = "final-test-service"
   cluster         = aws_ecs_cluster.final_test_cluster.id
@@ -58,10 +102,73 @@ resource "aws_ecs_service" "final_test_service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = data.aws_subnets.default.ids
-    security_groups  = [data.aws_security_group.default.id]
+    subnets          = ["subnet-xxxxxxxx"]  # Replace with your actual subnet ID
     assign_public_ip = true
+    security_groups  = ["sg-xxxxxxxx"]     # Replace with your actual security group ID
+  }
+}
+
+resource "aws_codepipeline" "example" {
+  name     = "demo-pipeline-${local.suffix}"
+  role_arn = aws_iam_role.codepipeline_role.arn
+
+  artifact_store {
+    location = aws_s3_bucket.codepipeline_bucket.bucket
+    type     = "S3"
   }
 
-  depends_on = [aws_ecs_task_definition.final_test_task]
+  stage {
+    name = "Source"
+
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeCommit"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        RepositoryName = "demo-repo"
+        BranchName     = "main"
+      }
+    }
+  }
+
+  stage {
+    name = "Build"
+
+    action {
+      name             = "Build"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_output"]
+      output_artifacts = ["build_output"]
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.example.name
+      }
+    }
+  }
+
+  stage {
+    name = "Deploy"
+
+    action {
+      name             = "Deploy"
+      category         = "Deploy"
+      owner            = "AWS"
+      provider         = "ECS"
+      input_artifacts  = ["build_output"]
+      version          = "1"
+
+      configuration = {
+        ClusterName   = aws_ecs_cluster.final_test_cluster.name
+        ServiceName   = aws_ecs_service.final_test_service.name
+        FileName      = "imagedefinitions.json"  # This tells ECS to pick the image from the artifact
+      }
+    }
+  }
 }
