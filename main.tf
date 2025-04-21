@@ -26,15 +26,13 @@ data "aws_security_group" "default" {
   }
 }
 
-# Check if the IAM role already exists, otherwise create it
+# Check if IAM role exists, if not create it
 data "aws_iam_role" "ecs_task_execution" {
   name = "ecsTaskExecutionRole"
-  # If the role does not exist, this will be ignored and Terraform will continue
-  # If it exists, Terraform will use the existing role
 }
 
 resource "aws_iam_role" "ecs_task_execution" {
-  count = length(data.aws_iam_role.ecs_task_execution.*.id) > 0 ? 0 : 1
+  count = length(data.aws_iam_role.ecs_task_execution.id) == 0 ? 1 : 0
 
   name = "ecsTaskExecutionRole"
 
@@ -51,9 +49,10 @@ resource "aws_iam_role" "ecs_task_execution" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
-  role       = aws_iam_role.ecs_task_execution[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-  depends_on = [aws_iam_role.ecs_task_execution]
+  count       = length(data.aws_iam_role.ecs_task_execution.id) == 0 ? 1 : 0
+  role        = aws_iam_role.ecs_task_execution[0].name
+  policy_arn  = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  depends_on  = [aws_iam_role.ecs_task_execution]
 }
 
 # ECR Repository (Create if it doesn't exist, or use existing)
