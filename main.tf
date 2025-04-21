@@ -48,6 +48,7 @@ resource "aws_iam_role" "ecs_task_execution" {
   })
 }
 
+# Attach IAM role policy if role is created
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
   count       = length(data.aws_iam_role.ecs_task_execution.id) == 0 ? 1 : 0
   role        = aws_iam_role.ecs_task_execution[0].name
@@ -87,7 +88,8 @@ resource "aws_ecs_task_definition" "final_task" {
   cpu                      = "256"
   memory                   = "512"
   network_mode             = "awsvpc"
-  execution_role_arn       = aws_iam_role.ecs_task_execution[0].arn
+
+  execution_role_arn       = length(data.aws_iam_role.ecs_task_execution.id) > 0 ? data.aws_iam_role.ecs_task_execution.arn : aws_iam_role.ecs_task_execution[0].arn
 
   container_definitions = jsonencode([
     {
@@ -102,6 +104,8 @@ resource "aws_ecs_task_definition" "final_task" {
       ]
     }
   ])
+
+  depends_on = [aws_iam_role.ecs_task_execution] # Ensure IAM role is created first
 }
 
 # ECS Service (Create if it doesn't exist, or use existing)
