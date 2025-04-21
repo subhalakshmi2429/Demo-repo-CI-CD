@@ -2,6 +2,7 @@ provider "aws" {
   region = "ap-south-1"
 }
 
+# Use default VPC, Subnets, and Security Groups
 data "aws_vpc" "default" {
   default = true
 }
@@ -25,8 +26,16 @@ data "aws_security_group" "default" {
   }
 }
 
-# IAM Role for ECS task execution
+# Check if the IAM role already exists, otherwise create it
+data "aws_iam_role" "ecs_task_execution" {
+  name = "ecsTaskExecutionRole"
+  # If the role does not exist, this will be ignored and Terraform will continue
+  # If it exists, Terraform will use the existing role
+}
+
 resource "aws_iam_role" "ecs_task_execution" {
+  count = length(data.aws_iam_role.ecs_task_execution.*.id) > 0 ? 0 : 1
+
   name = "ecsTaskExecutionRole"
 
   assume_role_policy = jsonencode({
@@ -39,6 +48,17 @@ resource "aws_iam_role" "ecs_task_execution" {
       Action = "sts:AssumeRole"
     }]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
+  role       = aws_iam_role.ecs_task_execution[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  depends_on = [aws_iam_role.ecs_task_execution]
+}
+
+# ECR Repository (Create if it doesn't exist, or use existing)
+resource "aws_ecr_repository" "final_repo" {
+  name = "final-test-repo"
 
   lifecycle {
     prevent_destroy = true
@@ -46,21 +66,7 @@ resource "aws_iam_role" "ecs_task_execution" {
   }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_attach" {
-  role       = aws_iam_role.ecs_task_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# ECR Repository
-resource "aws_ecr_repository" "final_repo" {
-  name = "final-test-repo"
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# S3 bucket for CodePipeline artifacts
+# S3 Bucket (Will create a new one if it doesn't exist)
 resource "aws_s3_bucket" "pipeline_bucket" {
   bucket = "final-test-pipeline-bucket"
 
@@ -70,19 +76,19 @@ resource "aws_s3_bucket" "pipeline_bucket" {
   }
 }
 
-# ECS Cluster
+# ECS Cluster (Create if it doesn't exist, or use existing)
 resource "aws_ecs_cluster" "final_cluster" {
   name = "final-test-cluster"
 }
 
-# ECS Task Definition
+# ECS Task Definition (Create if it doesn't exist, or use existing)
 resource "aws_ecs_task_definition" "final_task" {
   family                   = "final-test-task"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
   network_mode             = "awsvpc"
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_task_execution[0].arn
 
   container_definitions = jsonencode([
     {
@@ -99,7 +105,7 @@ resource "aws_ecs_task_definition" "final_task" {
   ])
 }
 
-# ECS Service
+# ECS Service (Create if it doesn't exist, or use existing)
 resource "aws_ecs_service" "final_service" {
   name            = "final-test-service"
   cluster         = aws_ecs_cluster.final_cluster.id
